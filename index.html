@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover">
+  <title>Mes miniatures de parfums</title>
+  <meta name="description" content="Gérez votre collection de miniatures de parfums : recherche par marque, créateur, photos.">
+  <meta name="theme-color" content="#3b2449">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Miniatures">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="top-row">
+    <div>
+      <h1>Mes miniatures</h1>
+      <p id="stats" class="stats">&nbsp;</p>
+    </div>
+    <button id="menuBtn" class="icon-btn" type="button" aria-label="Menu">⋯</button>
+  </div>
+
+  <div class="search">
+    <input id="q" type="search" placeholder="Rechercher : nom, marque, créateur, notes…" autocomplete="off" enterkeyhint="search">
+  </div>
+
+  <div class="filters">
+    <select id="fBrand" aria-label="Filtrer par marque"></select>
+    <select id="fCreator" aria-label="Filtrer par créateur"></select>
+    <select id="fFamily" aria-label="Filtrer par famille olfactive"></select>
+    <select id="sort" aria-label="Trier">
+      <option value="brand">Tri : marque</option>
+      <option value="name">Tri : nom</option>
+      <option value="creator">Tri : créateur</option>
+      <option value="recent">Tri : ajout récent</option>
+    </select>
+    <button id="clearFilters" class="chip" type="button" hidden>Effacer ✕</button>
+  </div>
+</header>
+
+<main id="grid" class="grid" aria-live="polite"></main>
+
+<div id="empty" class="empty" hidden>
+  <div class="empty-icon" aria-hidden="true">🧴</div>
+  <h2 id="emptyTitle">Votre collection est vide</h2>
+  <p id="emptyText">Touchez le bouton <strong>+</strong> pour ajouter votre première miniature.</p>
+</div>
+
+<button id="fab" class="fab" type="button" aria-label="Ajouter une miniature">+</button>
+
+<!-- Fiche détail -->
+<dialog id="detail" class="sheet">
+  <div class="sheet-bar">
+    <button type="button" class="link" data-close>‹ Retour</button>
+    <div class="spacer"></div>
+    <button type="button" class="link" id="editBtn">Modifier</button>
+  </div>
+  <div id="detailBody" class="sheet-body"></div>
+</dialog>
+
+<!-- Formulaire ajout / modification -->
+<dialog id="form" class="sheet">
+  <form id="f" autocomplete="off">
+    <div class="sheet-bar">
+      <button type="button" class="link" data-close>Annuler</button>
+      <strong id="formTitle">Nouvelle miniature</strong>
+      <button type="submit" class="link strong">Enregistrer</button>
+    </div>
+    <div class="sheet-body">
+
+      <section class="photos-block">
+        <div id="photoStrip" class="photo-strip"></div>
+        <div class="photo-actions">
+          <button type="button" class="btn" id="camBtn">📷 Prendre une photo</button>
+          <button type="button" class="btn" id="galBtn">🖼️ Choisir des photos</button>
+        </div>
+        <input id="camInput" type="file" accept="image/*" capture="environment" hidden>
+        <input id="galInput" type="file" accept="image/*" multiple hidden>
+      </section>
+
+      <label>Nom du parfum *
+        <input name="name" required maxlength="120" placeholder="ex. Chanel N°5">
+      </label>
+      <label>Marque *
+        <input name="brand" list="brandList" required maxlength="80" placeholder="ex. Chanel">
+      </label>
+      <label>Créateur / nez
+        <input name="creator" list="creatorList" maxlength="80" placeholder="ex. Ernest Beaux">
+      </label>
+
+      <div class="row">
+        <label>Année
+          <input name="year" inputmode="numeric" maxlength="4" placeholder="1921">
+        </label>
+        <label>Contenance (ml)
+          <input name="size" inputmode="decimal" maxlength="6" placeholder="5">
+        </label>
+      </div>
+
+      <div class="row">
+        <label>Concentration
+          <select name="concentration"></select>
+        </label>
+        <label>Famille olfactive
+          <select name="family"></select>
+        </label>
+      </div>
+
+      <label>État
+        <select name="state"></select>
+      </label>
+      <label>Notes olfactives
+        <textarea name="notes" rows="2" maxlength="500" placeholder="Tête : bergamote… Cœur : rose… Fond : vanille…"></textarea>
+      </label>
+      <label>Commentaire personnel
+        <textarea name="comment" rows="2" maxlength="500" placeholder="Où je l'ai eue, mon avis, anecdote…"></textarea>
+      </label>
+
+      <button type="button" class="btn danger" id="deleteBtn" hidden>Supprimer cette miniature</button>
+    </div>
+  </form>
+  <datalist id="brandList"></datalist>
+  <datalist id="creatorList"></datalist>
+</dialog>
+
+<!-- Menu -->
+<dialog id="menu" class="modal">
+  <h2>Menu</h2>
+  <button type="button" class="btn block" id="installBtn" hidden>📲 Installer l'application</button>
+  <button type="button" class="btn block" id="exportBtn">⬆️ Sauvegarder (exporter)</button>
+  <button type="button" class="btn block" id="importBtn">⬇️ Restaurer (importer)</button>
+  <input id="importInput" type="file" accept="application/json,.json" hidden>
+  <p class="hint" id="installHint"></p>
+  <p class="hint">Vos données restent sur cet appareil. Pensez à exporter régulièrement une sauvegarde.</p>
+  <button type="button" class="btn block ghost" data-close>Fermer</button>
+</dialog>
+
+<!-- Photo plein écran -->
+<dialog id="lightbox" class="lightbox">
+  <img id="lightboxImg" alt="">
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
