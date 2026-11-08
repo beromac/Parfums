@@ -1,7 +1,7 @@
 'use strict';
 
 /* ============================================================
-   Import d'un fichier Excel (.xlsx) ou CSV, sans aucune bibliothèque externe.
+   Import d'un fichier Excel (.xlsx), LibreOffice (.ods) ou CSV, sans aucune bibliothèque externe.
    Colonnes reconnues (peu importe l'ordre, accents et majuscules ignorés) :
    Position · Parfumeur/Marque · Parfum/Nom · Type · Cible · Ctnce/Contenance · Niveau ·
    Boîte · Année · Rare · Cote · Observations
@@ -103,6 +103,33 @@ async function parseXlsx(buffer) {
       arr[idx] = val;
     }
     rows.push(arr);
+  }
+  return rows;
+}
+
+
+/* ---------- Lecture d'un .ods (LibreOffice / OpenOffice) ---------- */
+
+async function parseOds(zip) {
+  const doc = xml(await zip.read('content.xml'));
+  const table = doc.getElementsByTagName('table:table')[0];
+  if (!table) throw new Error('Feuille introuvable');
+  const rows = [];
+  for (const tr of table.getElementsByTagName('table:table-row')) {
+    const arr = [];
+    for (const c of tr.children) {
+      if (c.tagName !== 'table:table-cell' && c.tagName !== 'table:covered-table-cell') continue;
+      const rep = parseInt(c.getAttribute('table:number-columns-repeated') || '1', 10);
+      const type = c.getAttribute('office:value-type');
+      let val = [...c.getElementsByTagName('text:p')].map((p) => p.textContent).join(' ');
+      if (type === 'float' || type === 'percentage' || type === 'currency') val = c.getAttribute('office:value') ?? val;
+      if (val === '' && rep > 50) { arr.length += rep; continue; }
+      for (let i = 0; i < Math.min(rep, 50); i++) arr.push(val);
+    }
+    const repRow = parseInt(tr.getAttribute('table:number-rows-repeated') || '1', 10);
+    const empty = !arr.some((v) => String(v ?? '').trim() !== '');
+    if (empty) { if (repRow > 50) continue; }
+    for (let i = 0; i < Math.min(repRow, empty ? 1 : 50); i++) rows.push(arr);
   }
   return rows;
 }
@@ -254,10 +281,13 @@ async function importSpreadsheet(file) {
   try {
     const buf = await file.arrayBuffer();
     const isZip = new Uint8Array(buf, 0, 2).join() === '80,75';   // « PK »
-    rows = isZip ? await parseXlsx(buf) : await parseCsv(buf);
+    if (isZip) {
+      const zip = await unzip(buf);
+      rows = zip.files['content.xml'] ? await parseOds(zip) : await parseXlsx(buf);
+    } else rows = await parseCsv(buf);
   } catch (e) {
     console.error(e);
-    toast('Impossible de lire ce fichier (.xlsx ou .csv attendu).');
+    toast('Impossible de lire ce fichier (.xlsx, .ods ou .csv attendu).');
     return;
   }
 
