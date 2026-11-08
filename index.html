@@ -26,16 +26,23 @@
     <button id="menuBtn" class="icon-btn" type="button" aria-label="Menu">⋯</button>
   </div>
 
+  <nav class="tabs" aria-label="Affichage">
+    <button type="button" class="on" data-view="collection">Collection</button>
+    <button type="button" data-view="cases">Présentoirs</button>
+  </nav>
+
   <div class="search">
-    <input id="q" type="search" placeholder="Rechercher : nom, marque, créateur, notes…" autocomplete="off" enterkeyhint="search">
+    <input id="q" type="search" placeholder="Nom, marque, notes, n° (P14-L2-C3-1)…" autocomplete="off" enterkeyhint="search">
   </div>
 
   <div class="filters">
+    <select id="fCase" aria-label="Filtrer par présentoir"></select>
     <select id="fBrand" aria-label="Filtrer par marque"></select>
     <select id="fCreator" aria-label="Filtrer par créateur"></select>
     <select id="fFamily" aria-label="Filtrer par famille olfactive"></select>
     <select id="sort" aria-label="Trier">
       <option value="brand">Tri : marque</option>
+      <option value="place">Tri : emplacement</option>
       <option value="name">Tri : nom</option>
       <option value="creator">Tri : créateur</option>
       <option value="recent">Tri : ajout récent</option>
@@ -45,6 +52,14 @@
 </header>
 
 <main id="grid" class="grid" aria-live="polite"></main>
+
+<section id="casesView" class="cases-view">
+  <div class="cases-bar">
+    <div id="caseTabs" class="case-tabs" role="tablist"></div>
+    <button type="button" class="btn small" id="manageCasesBtn">⚙️ Gérer</button>
+  </div>
+  <div id="caseBoard"></div>
+</section>
 
 <div id="empty" class="empty" hidden>
   <div class="empty-icon" aria-hidden="true">🧴</div>
@@ -84,6 +99,25 @@
         <input id="galInput" type="file" accept="image/*" multiple hidden>
       </section>
 
+      <fieldset class="place">
+        <legend>Emplacement dans le présentoir</legend>
+        <div class="row4">
+          <label>P (présentoir)
+            <input name="caseNo" type="number" inputmode="numeric" min="1" max="99" placeholder="14">
+          </label>
+          <label>L (ligne)
+            <input name="row" type="number" inputmode="numeric" min="1" max="99" placeholder="2">
+          </label>
+          <label>C (colonne)
+            <input name="col" type="number" inputmode="numeric" min="1" max="99" placeholder="3">
+          </label>
+          <label>Emplacement
+            <input name="slot" type="number" inputmode="numeric" min="1" max="99" placeholder="1">
+          </label>
+        </div>
+        <p id="locPreview" class="loc-preview">Laissez vide si non rangée.</p>
+      </fieldset>
+
       <label>Nom du parfum *
         <input name="name" required maxlength="120" placeholder="ex. Chanel N°5">
       </label>
@@ -112,14 +146,34 @@
         </label>
       </div>
 
+      <div class="row">
+        <label>Cible
+          <select name="cible"></select>
+        </label>
+        <label>Niveau
+          <select name="niveau"></select>
+        </label>
+      </div>
+      <div class="row3">
+        <label>Boîte
+          <select name="boite"></select>
+        </label>
+        <label>Rare
+          <select name="rare"></select>
+        </label>
+        <label>Cote (€)
+          <input name="cote" inputmode="decimal" maxlength="7" placeholder="15">
+        </label>
+      </div>
+
       <label>État
         <select name="state"></select>
       </label>
       <label>Notes olfactives
         <textarea name="notes" rows="2" maxlength="500" placeholder="Tête : bergamote… Cœur : rose… Fond : vanille…"></textarea>
       </label>
-      <label>Commentaire personnel
-        <textarea name="comment" rows="2" maxlength="500" placeholder="Où je l'ai eue, mon avis, anecdote…"></textarea>
+      <label>Observations
+        <textarea name="comment" rows="2" maxlength="500" placeholder="Aspect du flacon, bouchon, état, anecdote…"></textarea>
       </label>
 
       <button type="button" class="btn danger" id="deleteBtn" hidden>Supprimer cette miniature</button>
@@ -133,6 +187,10 @@
 <dialog id="menu" class="modal">
   <h2>Menu</h2>
   <button type="button" class="btn block" id="installBtn" hidden>📲 Installer l'application</button>
+  <button type="button" class="btn block" id="xlsBtn">📊 Importer un fichier Excel / CSV…</button>
+  <input id="xlsInput" type="file" accept=".xlsx,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+  <button type="button" class="btn block" id="printBtn">🖨️ Imprimer…</button>
+  <button type="button" class="btn block" id="manageCasesBtn2">🗄️ Gérer les présentoirs</button>
   <button type="button" class="btn block" id="exportBtn">⬆️ Sauvegarder (exporter)</button>
   <button type="button" class="btn block" id="importBtn">⬇️ Restaurer (importer)</button>
   <input id="importInput" type="file" accept="application/json,.json" hidden>
@@ -140,6 +198,48 @@
   <p class="hint">Vos données restent sur cet appareil. Pensez à exporter régulièrement une sauvegarde.</p>
   <button type="button" class="btn block ghost" data-close>Fermer</button>
 </dialog>
+
+<!-- Gestion des présentoirs -->
+<dialog id="casesDlg" class="modal">
+  <h2>Mes présentoirs</h2>
+  <p class="hint">Un emplacement se repère par son numéro <strong>P-L-C-emplacement</strong>, par exemple <strong>P14-L2-C3-1</strong> = présentoir 14, ligne 2, colonne 3, emplacement 1. Les lignes sont comptées de haut en bas, les colonnes de gauche à droite ; plusieurs emplacements peuvent se suivre dans une même colonne.</p>
+  <div id="casesList" class="cases-list"></div>
+  <form id="caseForm" class="case-form" autocomplete="off">
+    <h3 id="caseFormTitle">Ajouter un présentoir</h3>
+    <div class="row4">
+      <label>N°<input name="number" type="number" inputmode="numeric" min="1" max="99" required></label>
+      <label>Lignes<input name="rows" type="number" inputmode="numeric" min="1" max="60" required value="3"></label>
+      <label>Colonnes<input name="cols" type="number" inputmode="numeric" min="1" max="60" required value="4"></label>
+      <label>Empl. / col.<input name="depth" type="number" inputmode="numeric" min="1" max="30" required value="3"></label>
+    </div>
+    <label>Nom (facultatif)<input name="name" maxlength="60" placeholder="ex. Salon, vitrine du couloir"></label>
+    <div class="dlg-actions">
+      <button type="button" class="btn" id="caseCancel" hidden>Annuler</button>
+      <button type="submit" class="btn primary" id="caseSave">Enregistrer</button>
+    </div>
+  </form>
+  <button type="button" class="btn block ghost" data-close>Fermer</button>
+</dialog>
+
+<!-- Impression -->
+<dialog id="printDlg" class="modal">
+  <h2>Imprimer</h2>
+  <label class="opt"><input type="radio" name="pmode" value="list" checked> Tableau « Contenu du présentoir » (comme votre fiche)</label>
+  <label class="opt"><input type="radio" name="pmode" value="plans"> Plan visuel des présentoirs</label>
+
+  <div class="popts">
+    <label>Quoi imprimer
+      <select id="pScope"></select>
+    </label>
+  </div>
+  <label class="opt"><input type="checkbox" id="pPhotos"> Inclure les photos</label>
+
+  <button type="button" class="btn block primary" id="doPrint">🖨️ Imprimer / enregistrer en PDF</button>
+  <button type="button" class="btn block ghost" data-close>Annuler</button>
+</dialog>
+
+<!-- Zone d'impression (visible uniquement à l'impression) -->
+<div id="printArea" aria-hidden="true"></div>
 
 <!-- Photo plein écran -->
 <dialog id="lightbox" class="lightbox">
@@ -149,5 +249,7 @@
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script src="app.js"></script>
+<script src="emplacements.js"></script>
+<script src="import-excel.js"></script>
 </body>
 </html>

@@ -4,7 +4,10 @@ Application pour gérer une collection de miniatures de parfums :
 
 - **Fiches** : nom, marque, créateur (nez), année, concentration, famille olfactive, contenance, état, notes olfactives, commentaire
 - **Photos** : plusieurs photos par parfum (appareil photo ou galerie), photo principale au choix, zoom plein écran
-- **Recherche** : texte libre (nom, marque, créateur, notes…, sans tenir compte des accents), filtres par **marque**, **créateur** et **famille**, tris multiples
+- **Présentoirs** : chaque miniature a un numéro d'emplacement **P-L-C-emplacement**, par exemple `P14-L2-C3-1` = présentoir 14, ligne 2 (du haut), colonne 3 (de la gauche), emplacement 1 (plusieurs miniatures peuvent se suivre dans une même colonne). Onglet *Présentoirs* : vue en grille de chaque présentoir, cases libres cliquables pour y ranger une miniature
+- **Import Excel / CSV** : menu ⋯ → *Importer un fichier Excel / CSV*. Colonnes reconnues, dans n'importe quel ordre : Position, Parfumeur (ou Marque), Parfum, Type, Cible, Ctnce, Niveau, Boîte, Année, Rare, Cote, Observations. Réimporter le même fichier met à jour les fiches sans créer de doublons et conserve les photos
+- **Impression** : tableau « Contenu du présentoir n°X » (mêmes colonnes que votre fiche, une page A4 paysage par présentoir) ou plan visuel des présentoirs, avec ou sans photos ; possibilité d'enregistrer en PDF
+- **Recherche** : texte libre (nom, marque, créateur, notes…, sans tenir compte des accents), recherche directe par numéro (`P14-L2-C3-1`, `14-2-3-1`, ou partiel `P14-L2`), filtres par **présentoir**, **marque**, **créateur** et **famille**, tris multiples
 - **Hors ligne** : fonctionne sans connexion une fois installée
 - **Données privées** : tout reste sur votre appareil (IndexedDB), aucun serveur, aucun compte
 - **Sauvegarde / restauration** : export et import d'un fichier JSON (photos incluses)
@@ -17,7 +20,7 @@ C'est une **PWA** (application web installable) : un seul code, qui s'installe c
 
 1. Créez un compte sur <https://github.com> si besoin.
 2. Cliquez sur **New repository**, nommez-le par exemple `miniatures-parfums`, laissez-le **Public** (nécessaire pour Pages gratuit), puis **Create repository**.
-3. Sur la page du dépôt vide : **uploading an existing file**, glissez-déposez **tout le contenu** du dossier (`index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest`, le dossier `icons`, `README.md`), puis **Commit changes**.
+3. Sur la page du dépôt vide : **uploading an existing file**, glissez-déposez **tout le contenu** du dossier (`index.html`, `app.js`, `emplacements.js`, `import-excel.js`, `styles.css`, `sw.js`, `manifest.webmanifest`, le dossier `icons`, `README.md`), puis **Commit changes**.
 4. Allez dans **Settings → Pages**. Sous *Build and deployment*, choisissez **Deploy from a branch**, branche **main**, dossier **/ (root)**, puis **Save**.
 5. Après 1 à 2 minutes, votre application est disponible à l'adresse :
    `https://VOTRE-NOM.github.io/miniatures-parfums/`
@@ -65,6 +68,8 @@ Le code est volontairement simple, sans dépendance ni outil de compilation :
 | `index.html` | Structure des écrans |
 | `styles.css` | Apparence (thème clair/sombre automatique) |
 | `app.js` | Logique : base locale, recherche, photos, sauvegarde |
+| `emplacements.js` | Présentoirs : vue en grille, gestion, impression |
+| `import-excel.js` | Lecture des fichiers Excel / CSV (sans bibliothèque externe) |
 | `sw.js` | Mode hors ligne (pensez à changer `CACHE` après une grosse mise à jour) |
 | `manifest.webmanifest` | Nom et icônes de l'application installée |
 

@@ -290,3 +290,143 @@ dialog::backdrop { background: rgba(10, 5, 15, .55); }
   background: #2a2230; color: #fff; padding: 10px 16px; border-radius: 999px;
   font-size: .9rem; z-index: 1000; max-width: 90vw; text-align: center;
 }
+
+/* ============ Onglets ============ */
+.tabs { display: flex; gap: 6px; margin-top: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+.tabs button { flex: 1; padding: 8px 10px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+.tabs button.on { background: var(--accent); color: var(--bg); }
+@media (prefers-color-scheme: dark) { .tabs button.on { color: #17121c; } }
+
+body[data-view="cases"] .search,
+body[data-view="cases"] .filters,
+body[data-view="cases"] #grid,
+body[data-view="cases"] #empty { display: none !important; }
+body:not([data-view="cases"]) .cases-view { display: none; }
+
+/* ============ Emplacement : badge, formulaire ============ */
+.loc { position: absolute; left: 8px; top: 8px; background: var(--accent); color: var(--bg); font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: .03em; font-variant-numeric: tabular-nums; }
+@media (prefers-color-scheme: dark) { .loc { color: #17121c; } }
+
+.place { border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px 12px; margin: 0 0 6px; background: var(--card); }
+.place legend { padding: 0 6px; font-size: .85rem; color: var(--gold); font-weight: 700; }
+.place label { margin-top: 6px; }
+.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.loc-preview { margin: 8px 0 0; font-size: .9rem; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.loc-preview.warn { color: var(--danger); }
+
+/* ============ Vue présentoirs ============ */
+.cases-view { padding: 12px 16px 24px; max-width: 1100px; margin: 0 auto; }
+.cases-bar { display: flex; align-items: center; gap: 8px; }
+.case-tabs { flex: 1; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.case-tabs::-webkit-scrollbar { display: none; }
+.case-tab { flex: 0 0 auto; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-size: .92rem; cursor: pointer; }
+.case-tab.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+@media (prefers-color-scheme: dark) { .case-tab.on { color: #17121c; } }
+.btn.small { padding: 8px 12px; font-size: .9rem; flex: 0 0 auto; }
+.btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; text-align: center; }
+@media (prefers-color-scheme: dark) { .btn.primary { color: #17121c; } }
+
+.board-title { margin: 16px 0 0; font-size: 1.3rem; }
+.board-stats { margin: 2px 0 10px; }
+.crow { margin-bottom: 10px; }
+.crow-label { font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); margin: 0 0 4px 2px; }
+.cslots { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+.cell { position: relative; flex: 0 0 84px; min-height: 128px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; padding: 4px; display: flex; flex-direction: column; align-items: center; text-align: center; cursor: pointer; }
+.cell .cnum { align-self: flex-start; font-size: .7rem; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; padding-left: 2px; }
+.cell.free { border-style: dashed; background: transparent; justify-content: flex-start; }
+.cell.free .plus { margin: auto; font-size: 1.8rem; color: var(--muted); opacity: .55; }
+.cell .cimg { width: 100%; aspect-ratio: 1; border-radius: 8px; overflow: hidden; display: grid; place-items: center; background: linear-gradient(160deg, #efe6f4, #f7ecd9); }
+@media (prefers-color-scheme: dark) { .cell .cimg { background: linear-gradient(160deg, #2e2238, #3a2f22); } }
+.cell .cimg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cell .cph { font-size: 1.6rem; opacity: .6; }
+.cell .cname { font-size: .72rem; line-height: 1.15; margin-top: 4px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; width: 100%; }
+.cell .cbrand { font-size: .62rem; color: var(--gold); text-transform: uppercase; letter-spacing: .04em; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell .cwarn { position: absolute; right: 4px; top: 3px; font-size: .65rem; color: var(--danger); font-weight: 700; }
+
+/* ============ Gestion des présentoirs / impression (fenêtres) ============ */
+.modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.cases-list { margin: 8px 0; }
+.case-item { display: flex; align-items: center; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.case-item-text { flex: 1; display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); }
+.case-item-text strong { color: var(--ink); font-size: .95rem; }
+.danger-text { color: var(--danger); }
+.case-form { margin-top: 12px; padding: 4px 0 0; }
+.case-form h3 { margin: 6px 0; font-size: 1rem; }
+.case-form label, .popts label:not(.opt) { display: block; font-size: .85rem; color: var(--muted); margin: 8px 0 0; }
+.case-form input, .popts select, #pCase { display: block; width: 100%; margin-top: 4px; padding: 10px 12px; font: inherit; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+.dlg-actions { display: flex; gap: 8px; margin: 12px 0; }
+.dlg-actions .btn { flex: 1; text-align: center; }
+.opt { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; font-size: .95rem; color: var(--ink); }
+.opt input { margin-top: 3px; }
+.popts { margin: 4px 0 8px 4px; padding-left: 12px; border-left: 3px solid var(--line); }
+
+/* ============ Impression ============ */
+#printArea { display: none; }
+
+@media print {
+  html, body { background: #fff !important; color: #000 !important; padding: 0 !important; min-height: 0 !important; }
+  body > *:not(#printArea) { display: none !important; }
+  #printArea { display: block !important; font-family: -apple-system, "Segoe UI", Arial, sans-serif; color: #000; }
+  #printArea h1 { font-family: Georgia, serif; font-size: 18pt; margin: 0 0 2mm; }
+  #printArea .psub { margin: 0 0 5mm; font-size: 9pt; color: #444; }
+
+  .plist { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  .plist th { text-align: left; border-bottom: 1.5px solid #000; padding: 2mm 2mm; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .04em; }
+  .plist td { border-bottom: .5px solid #bbb; padding: 1.6mm 2mm; vertical-align: middle; }
+  .plist tr { break-inside: avoid; }
+  .plist thead { display: table-header-group; }
+  .pcode { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .pphoto { width: 16mm; }
+  .pphoto img { width: 14mm; height: 14mm; object-fit: cover; display: block; }
+
+  .psec { break-after: page; page-break-after: always; }
+  .psec:last-child { break-after: auto; page-break-after: auto; }
+  .pplan { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .pplan th { font-size: 8pt; padding: 1mm; border: .5px solid #888; background: #eee; }
+  .pplan th.corner { width: 11mm; }
+  .pplan th.rowh { width: 11mm; }
+  .pplan td { border: .5px solid #888; vertical-align: top; text-align: center; padding: 1mm; height: 24mm; overflow: hidden; }
+  .pplan td.pfree { background: repeating-linear-gradient(135deg, #fff 0 2mm, #f4f4f4 2mm 4mm); }
+  .pplan td img { width: 100%; max-height: 11mm; object-fit: contain; display: block; margin: 0 auto 1mm; }
+  .pplan .pn { font-size: 6.5pt; font-weight: 700; line-height: 1.1; }
+  .pplan .pb { font-size: 5.5pt; color: #444; text-transform: uppercase; margin-top: .5mm; }
+  .pplan .pc { font-size: 5.5pt; color: #000; margin-top: .5mm; font-variant-numeric: tabular-nums; }
+}
+
+/* ============ Version P-L-C-E : formulaires ============ */
+.row4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.row3 { gap: 8px; }
+.sheet-body .row4 input, .sheet-body .row3 input, .sheet-body .row3 select, .case-form .row4 input { padding: 10px 8px; }
+
+/* ============ Vue présentoir : colonnes et emplacements empilés ============ */
+.cslots { gap: 8px; align-items: flex-start; }
+.ccol { flex: 0 0 156px; }
+.ccol-head { font-size: .72rem; font-weight: 700; letter-spacing: .08em; color: var(--muted); margin: 0 0 4px 2px; }
+.cstack { display: flex; flex-direction: column; gap: 5px; }
+.cell { flex: none; width: 100%; min-height: 58px; flex-direction: row; align-items: center; gap: 6px; padding: 4px 6px 4px 4px; text-align: left; }
+.cell .cnum { align-self: center; flex: 0 0 14px; padding: 0; text-align: center; }
+.cell .cimg { width: 46px; flex: 0 0 46px; aspect-ratio: 1; }
+.cell .ctext { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cell .cname { margin: 0; font-size: .78rem; -webkit-line-clamp: 2; }
+.cell .cbrand { font-size: .62rem; }
+.cell.free { justify-content: flex-start; min-height: 40px; }
+.cell.free .plus { margin: 0 auto; font-size: 1.3rem; }
+.cell .cwarn { top: 2px; right: 4px; }
+
+/* ============ Impression : tableau de la fiche ============ */
+@media print {
+  .plist { font-size: 8.5pt; }
+  .plist th, .plist td { padding: 1.2mm 1.5mm; }
+  .plist th { border: .5px solid #666; background: #e8e8e8; font-size: 7.5pt; text-transform: none; letter-spacing: 0; }
+  .plist td { border: .5px solid #999; }
+  .plist .pc { text-align: center; }
+  .plist .pr { text-align: right; white-space: nowrap; }
+  .plist .pobs { font-size: 8pt; }
+  .pplan td { height: auto; text-align: left; padding: 1.2mm; vertical-align: top; }
+  .pplan .pslot { font-size: 7pt; line-height: 1.2; padding: .6mm 0; border-bottom: .3px dotted #aaa; display: flex; gap: 1mm; align-items: center; }
+  .pplan .pslot:last-child { border-bottom: 0; }
+  .pplan .pslot b { flex: 0 0 3mm; font-size: 6.5pt; color: #555; }
+  .pplan .pslot.free { color: #aaa; }
+  .pplan .pslot img { width: 7mm; height: 7mm; max-height: none; margin: 0; flex: 0 0 7mm; object-fit: cover; }
+  .pplan .pslot em { font-style: normal; font-size: 6pt; color: #555; text-transform: uppercase; }
+}

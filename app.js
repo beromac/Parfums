@@ -7,10 +7,19 @@
 
 const DB_NAME = 'miniatures-parfums';
 const STORE = 'parfums';
+const CASES = 'cases';
 
-const CONCENTRATIONS = ['', 'Extrait de parfum', 'Parfum', 'Eau de parfum', 'Eau de toilette', 'Eau de cologne', 'Eau fraîche', 'Autre'];
+const CONCENTRATIONS = ['', 'Extrait de parfum', 'Parfum', 'Eau de parfum', 'Eau de toilette', 'Eau de cologne', 'Eau fraîche', 'T', 'Autre'];
 const FAMILIES = ['', 'Floral', 'Fruité', 'Boisé', 'Oriental / Ambré', 'Frais / Hespéridé', 'Chypré', 'Fougère', 'Gourmand', 'Cuiré', 'Aquatique', 'Poudré', 'Musqué', 'Autre'];
 const STATES = ['Neuve / scellée', 'Ouverte', 'Entamée', 'Vide'];
+
+// Champs de la fiche de présentoir : [valeur enregistrée, libellé]
+const LABELED = {
+  cible: [['', '—'], ['F', 'F – Féminin'], ['M', 'M – Masculin'], ['U', 'Mixte']],
+  niveau: [['', '—'], ['P', 'P – Plein'], ['¾', '¾'], ['½', '½'], ['¼', '¼'], ['V', 'V – Vide']],
+  boite: [['', '—'], ['oui', 'Oui'], ['non', 'Non']],
+  rare: [['', '—'], ['X', 'X – Rare'], ['XX', 'XX – Très rare']],
+};
 
 const MAX_SIDE = 1280;      // taille maximale des photos enregistrées
 const JPEG_QUALITY = 0.82;
@@ -19,6 +28,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 
 let db;
 let items = [];
+let cases = [];             // présentoirs définis : { number, name, rows, slots }
 let thumbUrls = [];         // URLs d'objets à libérer à chaque rendu
 let editingId = null;
 let formPhotos = [];        // [{ blob, url }]
@@ -60,17 +70,21 @@ function toast(msg) {
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'id' });
+      if (!d.objectStoreNames.contains(CASES)) d.createObjectStore(CASES, { keyPath: 'number' });
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-function run(mode, fn) {
+function run(mode, fn, store = STORE) {
   return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, mode);
-    const request = fn(t.objectStore(STORE));
+    const t = db.transaction(store, mode);
+    const request = fn(t.objectStore(store));
     t.oncomplete = () => resolve(request ? request.result : undefined);
     t.onerror = () => reject(t.error);
     t.onabort = () => reject(t.error);
@@ -80,10 +94,40 @@ function run(mode, fn) {
 const dbGetAll = () => run('readonly', (s) => s.getAll());
 const dbPut = (o) => run('readwrite', (s) => s.put(o));
 const dbDelete = (id) => run('readwrite', (s) => s.delete(id));
+const dbGetCases = () => run('readonly', (s) => s.getAll(), CASES);
+const dbPutCase = (o) => run('readwrite', (s) => s.put(o), CASES);
+const dbDeleteCase = (n) => run('readwrite', (s) => s.delete(n), CASES);
 
 async function reload() {
   items = await dbGetAll();
+  cases = await dbGetCases();
+  await migrate();
   render();
+}
+
+/* ---------------- Emplacements (présentoir - ligne - emplacement) ---------------- */
+
+// Numéro d'emplacement : P(résentoir) - L(igne) - C(olonne) - numéro d'emplacement, ex. P14-L2-C3-1
+const hasLoc = (it) => Number.isInteger(it.caseNo) && Number.isInteger(it.row) && Number.isInteger(it.col) && Number.isInteger(it.slot);
+const codeOf = (c, r, col, s) => `P${c}-L${r}-C${col}-${s}`;
+const locCode = (it) => (hasLoc(it) ? codeOf(it.caseNo, it.row, it.col, it.slot) : '');
+const toInt = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : ''; };
+const locKey = (it) => (hasLoc(it) ? it.caseNo * 1e9 + it.row * 1e6 + it.col * 1e3 + it.slot : Infinity);
+const sameLoc = (a, b) => hasLoc(a) && a.caseNo === b.caseNo && a.row === b.row && a.col === b.col && a.slot === b.slot;
+
+// Anciennes données (présentoir-ligne-emplacement) : l'ancien « emplacement » devient la colonne
+async function migrate() {
+  for (const it of items) {
+    if (!('col' in it)) {
+      const o = { ...it, col: '' };
+      if (Number.isInteger(it.caseNo) && Number.isInteger(it.row) && Number.isInteger(it.slot)) { o.col = it.slot; o.slot = 1; }
+      Object.assign(it, o);
+      await dbPut(it);
+    }
+  }
+  for (const c of cases) {
+    if (!('cols' in c)) { c.cols = c.slots || 1; c.depth = 1; delete c.slots; await dbPutCase(c); }
+  }
 }
 
 /* ---------------- Photos ---------------- */
@@ -188,6 +232,7 @@ function fillDatalist(id, entries) {
 function currentFilters() {
   return {
     q: norm($('#q').value),
+    cs: $('#fCase').value,
     brand: $('#fBrand').value,
     creator: $('#fCreator').value,
     family: $('#fFamily').value,
@@ -198,12 +243,22 @@ function currentFilters() {
 function filtered() {
   const f = currentFilters();
   const terms = f.q.split(/\s+/).filter(Boolean);
+  // Recherche par numéro : « P14-L2-C3-1 », « 14-2-3-1 », « 14/2/3 » (numéro partiel = tout ce qui commence ainsi)
+  const m = f.q.match(/^(?=.*[-./])p?(\d+)(?:\s*[-./]\s*l?(\d+)(?:\s*[-./]\s*c?(\d+)(?:\s*[-./]\s*e?(\d+))?)?)?$/);
+  const wanted = m ? [m[1], m[2], m[3], m[4]].filter((x) => x !== undefined).map(Number) : null;
   const list = items.filter((it) => {
+    if (wanted) {
+      if (!hasLoc(it)) return false;
+      const parts = [it.caseNo, it.row, it.col, it.slot];
+      return wanted.every((w, i) => parts[i] === w);
+    }
+    if (f.cs === '__none') { if (hasLoc(it)) return false; }
+    else if (f.cs && String(it.caseNo) !== f.cs) return false;
     if (f.brand && norm(it.brand) !== f.brand) return false;
     if (f.creator && norm(it.creator) !== f.creator) return false;
     if (f.family && norm(it.family) !== f.family) return false;
     if (!terms.length) return true;
-    const hay = norm([it.name, it.brand, it.creator, it.family, it.concentration, it.year, it.notes, it.comment, it.state].join(' '));
+    const hay = norm([it.name, it.brand, it.creator, it.family, it.concentration, it.year, it.notes, it.comment, it.state, locCode(it)].join(' '));
     return terms.every((t) => hay.includes(t));
   });
   const cmp = (a, b, k) => String(a[k] || '').localeCompare(String(b[k] || ''), 'fr', { sensitivity: 'base' });
@@ -212,6 +267,11 @@ function filtered() {
       case 'name': return cmp(a, b, 'name');
       case 'creator': return cmp(a, b, 'creator') || cmp(a, b, 'brand') || cmp(a, b, 'name');
       case 'recent': return (b.created || 0) - (a.created || 0);
+      case 'place': {
+        const ka = locKey(a), kb = locKey(b);
+        if (ka === kb) return cmp(a, b, 'brand') || cmp(a, b, 'name');
+        return ka < kb ? -1 : 1;
+      }
       default: return cmp(a, b, 'brand') || cmp(a, b, 'name');
     }
   });
@@ -221,6 +281,22 @@ function filtered() {
 function render() {
   thumbUrls.forEach((u) => URL.revokeObjectURL(u));
   thumbUrls = [];
+
+  // Liste des présentoirs pour le filtre
+  const caseNos = [...new Set([...cases.map((c) => c.number), ...items.filter(hasLoc).map((i) => i.caseNo)])].sort((a, b) => a - b);
+  const csSel = $('#fCase');
+  const csPrev = csSel.value;
+  csSel.replaceChildren(h('option', { value: '' }, 'Tous les présentoirs'));
+  for (const n of caseNos) {
+    const c = cases.find((x) => x.number === n);
+    const cnt = items.filter((i) => hasLoc(i) && i.caseNo === n).length;
+    csSel.append(h('option', { value: String(n) }, `Présentoir ${n}${c && c.name ? ' · ' + c.name : ''} (${cnt})`));
+  }
+  const unplaced = items.filter((i) => !hasLoc(i)).length;
+  if (unplaced) csSel.append(h('option', { value: '__none' }, `Non rangées (${unplaced})`));
+  csSel.value = [...csSel.options].some((o) => o.value === csPrev) ? csPrev : '';
+
+  if (window.onRendered) window.onRendered();
 
   const brands = facet('brand');
   const creators = facet('creator');
@@ -233,7 +309,7 @@ function render() {
 
   const list = filtered();
   const f = currentFilters();
-  const hasFilter = !!(f.q || f.brand || f.creator || f.family);
+  const hasFilter = !!(f.q || f.cs || f.brand || f.creator || f.family);
   $('#clearFilters').hidden = !hasFilter;
 
   const total = items.length;
@@ -268,7 +344,9 @@ function render() {
     const meta = [it.creator, it.size ? `${it.size} ml` : ''].filter(Boolean).join(' · ');
     grid.append(
       h('button', { class: 'card', type: 'button', onclick: () => openDetail(it.id) },
-        h('div', { class: 'thumb' }, thumbInner, nPhotos > 1 ? h('span', { class: 'badge' }, `📷 ${nPhotos}`) : null),
+        h('div', { class: 'thumb' }, thumbInner,
+          hasLoc(it) ? h('span', { class: 'loc' }, locCode(it)) : null,
+          nPhotos > 1 ? h('span', { class: 'badge' }, `📷 ${nPhotos}`) : null),
         h('div', { class: 'card-body' },
           h('div', { class: 'card-brand' }, it.brand),
           h('div', { class: 'card-name' }, it.name),
@@ -326,11 +404,28 @@ function openDetail(id) {
   row('Concentration', it.concentration);
   row('Famille', it.family ? filterBtn(it.family, '#fFamily', it.family) : null);
   row('Contenance', it.size ? `${it.size} ml` : null);
+  row('Cible', ({ F: 'Féminin', M: 'Masculin', U: 'Mixte' })[it.cible]);
+  row('Niveau', it.niveau ? (it.niveau === 'P' ? 'Plein' : it.niveau === 'V' ? 'Vide' : it.niveau) : null);
+  row('Boîte', it.boite === 'oui' ? 'Oui' : it.boite === 'non' ? 'Non' : null);
+  row('Rare', it.rare === 'XX' ? 'Très rare (XX)' : it.rare === 'X' ? 'Rare (X)' : null);
+  row('Cote', it.cote !== '' && it.cote !== undefined ? `${String(it.cote).replace('.', ',')} €` : null);
   row('État', it.state);
+  if (hasLoc(it)) {
+    const cdef = cases.find((c) => c.number === it.caseNo);
+    row('Emplacement', h('span', {},
+      h('strong', {}, locCode(it)),
+      ` — présentoir ${it.caseNo}${cdef && cdef.name ? ' (' + cdef.name + ')' : ''}, ligne ${it.row}, colonne ${it.col}, emplacement ${it.slot} `,
+      h('button', {
+        type: 'button',
+        onclick: () => { $('#detail').close(); if (window.showCase) window.showCase(it.caseNo); },
+      }, 'Voir dans le présentoir')));
+  } else {
+    row('Emplacement', 'Non rangée');
+  }
 
   body.append(h('div', { class: 'd-brand' }, it.brand), h('h2', { class: 'd-name' }, it.name), facts);
   if (it.notes) body.append(h('div', { class: 'd-text' }, h('h3', {}, 'Notes olfactives'), it.notes));
-  if (it.comment) body.append(h('div', { class: 'd-text' }, h('h3', {}, 'Commentaire'), it.comment));
+  if (it.comment) body.append(h('div', { class: 'd-text' }, h('h3', {}, 'Observations'), it.comment));
 
   $('#detail').showModal();
 }
@@ -346,7 +441,19 @@ function fillSelectOptions(sel, values) {
   sel.replaceChildren(...values.map((v) => h('option', { value: v }, v || '—')));
 }
 
-function openForm(id = null) {
+function updateLocPreview() {
+  const f = $('#f');
+  const c = toInt(f.elements.caseNo.value), r = toInt(f.elements.row.value), k = toInt(f.elements.col.value), s = toInt(f.elements.slot.value);
+  const p = $('#locPreview');
+  p.classList.remove('warn');
+  if (!c && !r && !k && !s) { p.textContent = 'Laissez vide si non rangée.'; return; }
+  if (!c || !r || !k || !s) { p.textContent = 'Renseignez les quatre numéros (présentoir, ligne, colonne, emplacement).'; p.classList.add('warn'); return; }
+  const other = items.find((x) => x.id !== editingId && sameLoc(x, { caseNo: c, row: r, col: k, slot: s }));
+  p.textContent = `N° ${codeOf(c, r, k, s)}` + (other ? ` — déjà occupé par « ${other.name} »` : '');
+  if (other) p.classList.add('warn');
+}
+
+function openForm(id = null, prefill = null) {
   editingId = id;
   releaseFormPhotos();
   const f = $('#f');
@@ -356,9 +463,16 @@ function openForm(id = null) {
   $('#formTitle').textContent = it ? 'Modifier' : 'Nouvelle miniature';
   $('#deleteBtn').hidden = !it;
 
-  for (const name of ['name', 'brand', 'creator', 'year', 'size', 'concentration', 'family', 'state', 'notes', 'comment']) {
+  for (const name of ['name', 'brand', 'creator', 'year', 'size', 'concentration', 'family', 'state', 'notes', 'comment', 'caseNo', 'row', 'col', 'slot', 'cible', 'niveau', 'boite', 'rare', 'cote']) {
     f.elements[name].value = it ? (it[name] ?? '') : (name === 'state' ? STATES[0] : '');
   }
+  if (!it && prefill) {
+    f.elements.caseNo.value = prefill.caseNo ?? '';
+    f.elements.row.value = prefill.row ?? '';
+    f.elements.col.value = prefill.col ?? '';
+    f.elements.slot.value = prefill.slot ?? '';
+  }
+  updateLocPreview();
   if (it && it.photos) {
     formPhotos = it.photos.map((blob) => ({ blob, url: URL.createObjectURL(blob) }));
   }
@@ -376,7 +490,17 @@ async function saveForm(e) {
     toast('Le nom et la marque sont obligatoires.');
     return;
   }
+  const caseNo = toInt(f.elements.caseNo.value), row = toInt(f.elements.row.value), col = toInt(f.elements.col.value), slot = toInt(f.elements.slot.value);
+  const nbLoc = [caseNo, row, col, slot].filter(Boolean).length;
+  if (nbLoc > 0 && nbLoc < 4) {
+    toast('Emplacement incomplet : renseignez présentoir, ligne, colonne et emplacement (ou laissez les quatre vides).');
+    return;
+  }
   const existing = editingId ? items.find((x) => x.id === editingId) : null;
+  if (nbLoc === 4) {
+    const other = items.find((x) => x.id !== (existing && existing.id) && sameLoc(x, { caseNo, row, col, slot }));
+    if (other && !confirm(`L’emplacement ${codeOf(caseNo, row, col, slot)} est déjà occupé par « ${other.name} ». Enregistrer quand même ?`)) return;
+  }
   const now = Date.now();
   const record = {
     id: existing ? existing.id : uid(),
@@ -390,6 +514,15 @@ async function saveForm(e) {
     state: val('state'),
     notes: val('notes'),
     comment: val('comment'),
+    caseNo: nbLoc === 4 ? caseNo : '',
+    row: nbLoc === 4 ? row : '',
+    col: nbLoc === 4 ? col : '',
+    slot: nbLoc === 4 ? slot : '',
+    cible: val('cible'),
+    niveau: val('niveau'),
+    boite: val('boite'),
+    rare: val('rare'),
+    cote: val('cote').replace(',', '.'),
     photos: formPhotos.map((p) => p.blob),
     created: existing ? existing.created : now,
     updated: now,
@@ -429,13 +562,13 @@ const blobToDataURL = (blob) => new Promise((resolve, reject) => {
 });
 
 async function exportData() {
-  if (!items.length) { toast('Rien à exporter pour l’instant.'); return; }
+  if (!items.length && !cases.length) { toast('Rien à exporter pour l’instant.'); return; }
   toast('Préparation de la sauvegarde…');
   const out = [];
   for (const it of items) {
     out.push({ ...it, photos: await Promise.all((it.photos || []).map(blobToDataURL)) });
   }
-  const json = JSON.stringify({ app: 'miniatures-parfums', version: 1, exported: new Date().toISOString(), items: out });
+  const json = JSON.stringify({ app: 'miniatures-parfums', version: 3, exported: new Date().toISOString(), cases, items: out });
   const name = `miniatures-parfums-${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([json], name, { type: 'application/json' });
 
@@ -457,6 +590,15 @@ async function importData(file) {
     const data = JSON.parse(await file.text());
     if (!data || !Array.isArray(data.items)) throw new Error('format');
     let n = 0;
+    for (const c of data.cases || []) {
+      if (c && Number.isInteger(c.number) && c.number > 0) {
+        const oldFormat = !('cols' in c);   // anciennes sauvegardes : rows × slots
+        await dbPutCase({
+          number: c.number, name: String(c.name || ''), rows: toInt(c.rows) || 1,
+          cols: toInt(oldFormat ? c.slots : c.cols) || 1, depth: oldFormat ? 1 : (toInt(c.depth) || 1),
+        });
+      }
+    }
     for (const raw of data.items) {
       if (!raw || !raw.name || !raw.brand) continue;
       const photos = [];
@@ -469,6 +611,10 @@ async function importData(file) {
         creator: raw.creator || '', year: raw.year || '', size: raw.size || '',
         concentration: raw.concentration || '', family: raw.family || '',
         state: raw.state || '', notes: raw.notes || '', comment: raw.comment || '',
+        ...(('col' in raw)
+          ? { caseNo: toInt(raw.caseNo), row: toInt(raw.row), col: toInt(raw.col), slot: toInt(raw.slot) }
+          : { caseNo: toInt(raw.caseNo), row: toInt(raw.row), col: toInt(raw.slot), slot: toInt(raw.slot) ? 1 : '' }),
+        cible: raw.cible || '', niveau: raw.niveau || '', boite: raw.boite || '', rare: raw.rare || '', cote: raw.cote ?? '',
         photos, created: raw.created || Date.now(), updated: raw.updated || Date.now(),
       });
       n++;
@@ -485,6 +631,7 @@ async function importData(file) {
 
 function resetFilters(redraw = true) {
   $('#q').value = '';
+  $('#fCase').value = '';
   $('#fBrand').value = '';
   $('#fCreator').value = '';
   $('#fFamily').value = '';
@@ -520,9 +667,13 @@ function setup() {
   fillSelectOptions($('#f').elements.concentration, CONCENTRATIONS);
   fillSelectOptions($('#f').elements.family, FAMILIES);
   fillSelectOptions($('#f').elements.state, STATES);
+  for (const [name, opts] of Object.entries(LABELED)) {
+    $('#f').elements[name].replaceChildren(...opts.map(([v, l]) => h('option', { value: v }, l)));
+  }
 
   $('#q').addEventListener('input', render);
-  for (const id of ['#fBrand', '#fCreator', '#fFamily', '#sort']) $(id).addEventListener('change', render);
+  for (const id of ['#fCase', '#fBrand', '#fCreator', '#fFamily', '#sort']) $(id).addEventListener('change', render);
+  for (const n of ['caseNo', 'row', 'col', 'slot']) $('#f').elements[n].addEventListener('input', updateLocPreview);
   $('#clearFilters').addEventListener('click', () => resetFilters());
 
   $('#fab').addEventListener('click', () => openForm());

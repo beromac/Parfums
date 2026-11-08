@@ -1,10 +1,12 @@
 /* Service worker : fonctionnement hors ligne (cache de l'application) */
-const CACHE = 'miniatures-v1';
+const CACHE = 'miniatures-v3';
 const FILES = [
   './',
   'index.html',
   'styles.css',
   'app.js',
+  'emplacements.js',
+  'import-excel.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-192.png',
