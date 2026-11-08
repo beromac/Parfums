@@ -1,5 +1,5 @@
 /* Service worker : fonctionnement hors ligne (cache de l'application) */
-const CACHE = 'miniatures-v3';
+const CACHE = 'miniatures-v4';
 const FILES = [
   './',
   'index.html',

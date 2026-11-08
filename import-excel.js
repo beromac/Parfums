@@ -1,7 +1,7 @@
 'use strict';
 
 /* ============================================================
-   Import d'un fichier Excel (.xlsx), LibreOffice (.ods) ou CSV, sans aucune bibliothèque externe.
+   Import d'un fichier Excel (.xlsx, .xls), LibreOffice (.ods) ou CSV, sans aucune bibliothèque externe.
    Colonnes reconnues (peu importe l'ordre, accents et majuscules ignorés) :
    Position · Parfumeur/Marque · Parfum/Nom · Type · Cible · Ctnce/Contenance · Niveau ·
    Boîte · Année · Rare · Cote · Observations
@@ -107,6 +107,154 @@ async function parseXlsx(buffer) {
   return rows;
 }
 
+
+
+/* ---------- Lecture d'un ancien .xls (Excel 97-2003, format BIFF8 dans un conteneur OLE2) ---------- */
+
+function parseXls(buffer) {
+  const u8 = new Uint8Array(buffer);
+  const dv = new DataView(buffer);
+  const FREE = 0xFFFFFFFA;                                   // valeurs >= : secteurs spéciaux
+  const ss = 1 << dv.getUint16(30, true);
+  const mss = 1 << dv.getUint16(32, true);
+  const dirStart = dv.getUint32(48, true);
+  const cutoff = dv.getUint32(56, true);
+  const miniStart = dv.getUint32(60, true);
+  const difStart = dv.getUint32(68, true);
+  const numDif = dv.getUint32(72, true);
+  const off = (n) => (n + 1) * ss;
+
+  const fatSectors = [];
+  for (let i = 0; i < 109; i++) { const s = dv.getUint32(76 + i * 4, true); if (s < FREE) fatSectors.push(s); }
+  let d = difStart;
+  for (let k = 0; k < numDif && d < FREE; k++) {
+    for (let i = 0; i < ss / 4 - 1; i++) { const s = dv.getUint32(off(d) + i * 4, true); if (s < FREE) fatSectors.push(s); }
+    d = dv.getUint32(off(d) + ss - 4, true);
+  }
+  const fat = [];
+  for (const s of fatSectors) for (let i = 0; i < ss / 4; i++) fat.push(dv.getUint32(off(s) + i * 4, true));
+
+  const chain = (start, table) => {
+    const out = [];
+    for (let s = start; s < FREE && out.length <= table.length; s = table[s]) out.push(s);
+    return out;
+  };
+  const readBig = (start, size) => {
+    const secs = chain(start, fat);
+    const out = new Uint8Array(secs.length * ss);
+    secs.forEach((s, i) => out.set(u8.subarray(off(s), off(s) + ss), i * ss));
+    return size === undefined ? out : out.subarray(0, size);
+  };
+
+  const dir = readBig(dirStart);
+  const ddv = new DataView(dir.buffer, dir.byteOffset, dir.byteLength);
+  let root = null, book = null;
+  for (let p = 0; p + 128 <= dir.length; p += 128) {
+    const nameLen = ddv.getUint16(p + 64, true);
+    let name = '';
+    for (let i = 0; i < Math.max(0, nameLen / 2 - 1); i++) name += String.fromCharCode(ddv.getUint16(p + i * 2, true));
+    const e = { name, type: dir[p + 66], start: ddv.getUint32(p + 116, true), size: ddv.getUint32(p + 120, true) };
+    if (e.type === 5) root = e;
+    if (e.type === 2 && (name === 'Workbook' || name === 'Book')) book = e;
+  }
+  if (!book) throw new Error('Classeur Excel introuvable dans le fichier');
+
+  let wb;
+  if (book.size >= cutoff) wb = readBig(book.start, book.size);
+  else {                                                      // petit classeur : flux « mini »
+    const mf = readBig(miniStart);
+    const mdv = new DataView(mf.buffer, mf.byteOffset, mf.byteLength);
+    const miniFat = [];
+    for (let i = 0; i < mf.length / 4; i++) miniFat.push(mdv.getUint32(i * 4, true));
+    const ministream = readBig(root.start, root.size);
+    const secs = chain(book.start, miniFat);
+    wb = new Uint8Array(secs.length * mss);
+    secs.forEach((s, i) => wb.set(ministream.subarray(s * mss, s * mss + mss), i * mss));
+    wb = wb.subarray(0, book.size);
+  }
+
+  // Découpage en enregistrements BIFF
+  const wdv = new DataView(wb.buffer, wb.byteOffset, wb.byteLength);
+  const recs = [];
+  for (let p = 0; p + 4 <= wb.length;) {
+    const id = wdv.getUint16(p, true), len = wdv.getUint16(p + 2, true);
+    recs.push({ id, pos: p, data: wb.subarray(p + 4, p + 4 + len) });
+    p += 4 + len;
+  }
+
+  // Table des chaînes partagées (SST + CONTINUE)
+  const sst = [];
+  const si = recs.findIndex((r) => r.id === 0x00FC);
+  if (si >= 0) {
+    const chunks = [recs[si].data.subarray(8)];
+    for (let i = si + 1; i < recs.length && recs[i].id === 0x003C; i++) chunks.push(recs[i].data);
+    const unique = new DataView(recs[si].data.buffer, recs[si].data.byteOffset, recs[si].data.byteLength).getUint32(4, true);
+    let ci = 0, pos = 0;
+    const u8n = () => { while (ci < chunks.length && pos >= chunks[ci].length) { ci++; pos = 0; } return ci < chunks.length ? chunks[ci][pos++] : 0; };
+    const skip = (n) => { while (n > 0 && ci < chunks.length) { if (pos >= chunks[ci].length) { ci++; pos = 0; continue; } const t = Math.min(n, chunks[ci].length - pos); pos += t; n -= t; } };
+    for (let k = 0; k < unique && ci < chunks.length; k++) {
+      const cch = u8n() | (u8n() << 8);
+      const flags = u8n();
+      let rich = 0, ext = 0;
+      if (flags & 8) rich = u8n() | (u8n() << 8);
+      if (flags & 4) ext = u8n() | (u8n() << 8) | (u8n() << 16) | (u8n() * 16777216);
+      let wide = flags & 1, left = cch, str = '';
+      while (left > 0 && ci < chunks.length) {
+        const c = chunks[ci];
+        const avail = Math.floor((c.length - pos) / (wide ? 2 : 1));
+        if (avail <= 0) { ci++; pos = 0; if (ci < chunks.length) wide = chunks[ci][pos++] & 1; continue; }
+        const take = Math.min(left, avail);
+        for (let j = 0; j < take; j++) {
+          if (wide) { str += String.fromCharCode(c[pos] | (c[pos + 1] << 8)); pos += 2; } else str += String.fromCharCode(c[pos++]);
+        }
+        left -= take;
+      }
+      skip(rich * 4 + ext);
+      sst.push(str);
+    }
+  }
+
+  // Première feuille : position donnée par le premier enregistrement BOUNDSHEET
+  const bs = recs.find((r) => r.id === 0x0085);
+  if (!bs) throw new Error('Feuille introuvable');
+  const sheetPos = new DataView(bs.data.buffer, bs.data.byteOffset, bs.data.byteLength).getUint32(0, true);
+  let ri = recs.findIndex((r) => r.pos === sheetPos);
+  if (ri < 0) throw new Error('Feuille introuvable');
+
+  const rk = (v) => {
+    let n;
+    if (v & 2) n = (v | 0) >> 2;
+    else { const b = new DataView(new ArrayBuffer(8)); b.setUint32(4, (v & 0xFFFFFFFC) >>> 0, true); n = b.getFloat64(0, true); }
+    return v & 1 ? n / 100 : n;
+  };
+  const numStr = (n) => String(Math.round(n * 1e6) / 1e6);
+  const rows = [];
+  const put = (r, c, v) => { (rows[r] = rows[r] || [])[c] = v; };
+  let depth = 0;
+  for (; ri < recs.length; ri++) {
+    const { id, data } = recs[ri];
+    if (id === 0x0809) { depth++; continue; }
+    if (id === 0x000A) { depth--; if (depth <= 0) break; continue; }
+    if (!data.length) continue;
+    const v = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    if (id === 0x00FD) put(v.getUint16(0, true), v.getUint16(2, true), sst[v.getUint32(6, true)] ?? '');
+    else if (id === 0x0203) put(v.getUint16(0, true), v.getUint16(2, true), numStr(v.getFloat64(6, true)));
+    else if (id === 0x027E) put(v.getUint16(0, true), v.getUint16(2, true), numStr(rk(v.getUint32(6, true))));
+    else if (id === 0x00BD) {
+      const r = v.getUint16(0, true), c0 = v.getUint16(2, true), n = (data.length - 6) / 6;
+      for (let i = 0; i < n; i++) put(r, c0 + i, numStr(rk(v.getUint32(4 + i * 6 + 2, true))));
+    } else if (id === 0x0204) {
+      const cch = v.getUint16(6, true);
+      let s = '';
+      if (data.length > 8 && (data[8] & 1)) for (let i = 0; i < cch; i++) s += String.fromCharCode(v.getUint16(9 + i * 2, true));
+      else for (let i = 0; i < cch; i++) s += String.fromCharCode(data[9 + i] ?? 0);
+      put(v.getUint16(0, true), v.getUint16(2, true), s);
+    } else if (id === 0x0006 && data.length >= 14 && !(data[12] === 0xFF && data[13] === 0xFF)) {
+      put(v.getUint16(0, true), v.getUint16(2, true), numStr(v.getFloat64(6, true)));
+    }
+  }
+  return Array.from(rows, (r) => r || []);
+}
 
 /* ---------- Lecture d'un .ods (LibreOffice / OpenOffice) ---------- */
 
@@ -280,14 +428,15 @@ async function importSpreadsheet(file) {
   let rows;
   try {
     const buf = await file.arrayBuffer();
-    const isZip = new Uint8Array(buf, 0, 2).join() === '80,75';   // « PK »
-    if (isZip) {
+    const sig = new Uint8Array(buf, 0, 4).join();
+    if (sig === '80,75,3,4') {                                    // « PK » : .xlsx ou .ods
       const zip = await unzip(buf);
       rows = zip.files['content.xml'] ? await parseOds(zip) : await parseXlsx(buf);
-    } else rows = await parseCsv(buf);
+    } else if (sig === '208,207,17,224') rows = parseXls(buf);   // ancien .xls
+    else rows = await parseCsv(buf);
   } catch (e) {
     console.error(e);
-    toast('Impossible de lire ce fichier (.xlsx, .ods ou .csv attendu).');
+    toast('Impossible de lire ce fichier : ' + (e && e.message ? e.message : 'format non reconnu') + ' (formats acceptés : .xlsx, .xls, .ods, .csv).');
     return;
   }
 
